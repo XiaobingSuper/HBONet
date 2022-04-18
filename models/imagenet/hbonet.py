@@ -199,6 +199,7 @@ class HarmoniousBottleneck_2x(nn.Module):
         assert stride in [1, 2]
         self.stride = stride
         self.oup = oup
+        self.inp = inp
 
         self.conv = nn.Sequential(
             # dw-linear
@@ -230,10 +231,23 @@ class HarmoniousBottleneck_2x(nn.Module):
 
     def forward(self, x):
         if self.stride == 1:
-            return torch.cat((x[:, -(self.oup - self.oup // 2):, :, :], \
-                              self.upconv(x[:, :(self.oup // 2), :, :] + self.upsample(self.conv(x)))), dim=1)
+            #a = x[:, -(self.oup - self.oup // 2):, :, :]
+            # b = x[:, :(self.oup // 2), :, :]
+            #start = int(self.oup - self.oup // 2)
+            #end = self.oup // 2
+            len = self.oup - self.oup // 2
+            start = self.inp - len
+            a = torch.narrow(x, 1, start, len)
+            b = torch.narrow(x, 1, 0, self.oup // 2)
+            c = torch.nn.functional.interpolate(self.conv(x), scale_factor=2, mode='nearest')
+            return torch.cat((a, \
+                              self.upconv(b + c)), dim=1)
         elif self.stride == 2:
-            return torch.cat((self.avgpool(x[:, -(self.oup - self.oup // 2):, :, :]), self.conv(x)), dim=1)
+            len = self.oup - self.oup // 2
+            start = self.inp - len
+            a = torch.narrow(x, 1, start, len)
+            # a = x[:, -(self.oup - self.oup // 2):, :, :]
+            return torch.cat((self.avgpool(a), self.conv(x)), dim=1)
 
 
 class HBONet(nn.Module):
@@ -303,7 +317,8 @@ class HBONet(nn.Module):
         x = self.features(x)
         x = self.conv(x)
         x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
+        x = torch.flatten(x, 1)
+        #x = x.view(x.size(0), -1)
         x = self.classifier(x)
         return x
 
